@@ -84,7 +84,7 @@ fn write(path: &Path, saves: &Saves) -> Result<(), SaveError> {
     let temp_path = temp_path(path);
     let file = File::create(&temp_path)?;
     let mut writer = BufWriter::new(file);
-    serde_json::to_writer_pretty(&mut writer, saves)?;
+    serde_json::to_writer(&mut writer, saves)?;
     writer.write_all(b"\n")?;
     writer.flush()?;
     fs::rename(temp_path, path)?;

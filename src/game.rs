@@ -257,7 +257,7 @@ impl World {
 
     pub fn help_line(&self) -> &'static str {
         if self.is_load_dialog_open() {
-            "j/k or arrows select  g/G top/bottom  enter load  d delete  esc close"
+            "j/k or arrows select  enter load  d delete  esc close"
         } else {
             "arrows/hjkl move  space toggle  enter run/pause  n step  r clear  s save  L load  q quit"
         }
@@ -390,18 +390,6 @@ impl World {
             KeyCode::Down | KeyCode::Char('j') => {
                 if let Some(dialog) = self.load_dialog.as_mut() {
                     dialog.move_selection(1);
-                }
-                true
-            }
-            KeyCode::Char('g') => {
-                if let Some(dialog) = self.load_dialog.as_mut() {
-                    dialog.select_first();
-                }
-                true
-            }
-            KeyCode::Char('G') => {
-                if let Some(dialog) = self.load_dialog.as_mut() {
-                    dialog.select_last();
                 }
                 true
             }
