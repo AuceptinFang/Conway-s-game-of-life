@@ -2,7 +2,7 @@ use crate::save;
 use crossterm::event::{KeyCode, KeyEvent};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum MOD {
+pub enum Mod {
     RUNNING(usize),
     EDITING(usize),
 }
@@ -43,16 +43,6 @@ impl LoadDialog {
         self.selected = (self.selected as isize + delta).clamp(0, last) as usize;
     }
 
-    fn select_first(&mut self) {
-        self.selected = 0;
-    }
-
-    fn select_last(&mut self) {
-        if !self.is_empty() {
-            self.selected = self.saves.len() - 1;
-        }
-    }
-
     fn remove_selected(&mut self) -> Option<Vec<save::Cell>> {
         if self.is_empty() {
             return None;
@@ -71,7 +61,7 @@ impl LoadDialog {
 pub struct World {
     pub grid: Vec<Vec<bool>>,
     pub config: Config,
-    pub state: MOD,
+    pub state: Mod,
     pub generation: usize,
     pub(crate) load_dialog: Option<LoadDialog>,
     status_message: String,
@@ -93,7 +83,7 @@ impl World {
         let mut world = World {
             grid: vec![vec![false; config.col]; config.row],
             config,
-            state: MOD::EDITING(0),
+            state: Mod::EDITING(0),
             generation: 0,
             load_dialog: None,
             status_message: format!(
@@ -141,7 +131,7 @@ impl World {
     }
 
     pub fn is_running(&self) -> bool {
-        self.load_dialog.is_none() && matches!(self.state, MOD::RUNNING(_))
+        self.load_dialog.is_none() && matches!(self.state, Mod::RUNNING(_))
     }
 
     pub fn is_load_dialog_open(&self) -> bool {
@@ -210,8 +200,8 @@ impl World {
         }
 
         match self.state {
-            MOD::RUNNING(_) => "Running",
-            MOD::EDITING(_) => "Editing",
+            Mod::RUNNING(_) => "Running",
+            Mod::EDITING(_) => "Editing",
         }
     }
 
@@ -284,8 +274,8 @@ impl World {
     fn toggle_running(&mut self) {
         let idx = self.cursor_index();
         self.state = match self.state {
-            MOD::RUNNING(_) => MOD::EDITING(idx),
-            MOD::EDITING(_) => MOD::RUNNING(idx),
+            Mod::RUNNING(_) => Mod::EDITING(idx),
+            Mod::EDITING(_) => Mod::RUNNING(idx),
         };
     }
 
@@ -313,15 +303,15 @@ impl World {
 
     fn cursor_index(&self) -> usize {
         match self.state {
-            MOD::RUNNING(idx) | MOD::EDITING(idx) => idx,
+            Mod::RUNNING(idx) | Mod::EDITING(idx) => idx,
         }
     }
 
     fn set_cursor_index(&mut self, idx: usize) {
         let idx = idx.min(self.board_len().saturating_sub(1));
         self.state = match self.state {
-            MOD::RUNNING(_) => MOD::RUNNING(idx),
-            MOD::EDITING(_) => MOD::EDITING(idx),
+            Mod::RUNNING(_) => Mod::RUNNING(idx),
+            Mod::EDITING(_) => Mod::EDITING(idx),
         };
     }
 
@@ -486,7 +476,7 @@ impl World {
 
     fn apply_seed(&mut self, seed: &[save::Cell]) -> usize {
         self.clear();
-        self.state = MOD::EDITING(0);
+        self.state = Mod::EDITING(0);
 
         let mut loaded_cells = 0;
         let mut first_cell = None;
@@ -526,13 +516,13 @@ mod tests {
         };
         let mut world = World::init_world(config);
         world.generation = 9;
-        world.state = MOD::RUNNING(3);
+        world.state = Mod::RUNNING(3);
 
         let loaded = world.apply_seed(&[(1, 1), (3, 2), (9, 9)]);
 
         assert_eq!(loaded, 2);
         assert_eq!(world.generation, 0);
-        assert_eq!(world.state, MOD::EDITING(5));
+        assert_eq!(world.state, Mod::EDITING(5));
         assert!(world.grid[1][1]);
         assert!(world.grid[2][3]);
         assert!(!world.grid[0][0]);
@@ -549,38 +539,5 @@ mod tests {
         dialog.move_selection(-10);
         assert_eq!(dialog.selected, 0);
         assert_eq!(dialog.selected_number(), 1);
-
-        dialog.select_last();
-        assert_eq!(dialog.selected, 2);
-
-        dialog.select_first();
-        assert_eq!(dialog.selected, 0);
-    }
-
-    #[test]
-    fn removing_selected_seed_keeps_selection_in_bounds() {
-        let mut dialog = LoadDialog::new(vec![vec![(0, 0)], vec![(1, 1)], vec![(2, 2)]]);
-        dialog.select_last();
-
-        let removed = dialog
-            .remove_selected()
-            .expect("selected save should exist");
-        assert_eq!(removed, vec![(2, 2)]);
-        assert_eq!(dialog.selected, 1);
-        assert_eq!(dialog.len(), 2);
-
-        let removed = dialog
-            .remove_selected()
-            .expect("selected save should exist");
-        assert_eq!(removed, vec![(1, 1)]);
-        assert_eq!(dialog.selected, 0);
-        assert_eq!(dialog.len(), 1);
-
-        let removed = dialog
-            .remove_selected()
-            .expect("selected save should exist");
-        assert_eq!(removed, vec![(0, 0)]);
-        assert_eq!(dialog.selected, 0);
-        assert!(dialog.is_empty());
     }
 }

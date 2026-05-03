@@ -32,12 +32,12 @@ fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
             Duration::from_millis(250)
         };
 
-        if event::poll(timeout)? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press && !w.handle_key(key) {
-                    break Ok(());
-                }
-            }
+        if event::poll(timeout)?
+            && let Event::Key(key) = event::read()?
+            && key.kind == KeyEventKind::Press
+            && !w.handle_key(key)
+        {
+            break Ok(());
         }
 
         if w.is_running() && last_tick.elapsed() >= duration {
