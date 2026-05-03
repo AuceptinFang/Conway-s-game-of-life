@@ -2,12 +2,12 @@ mod game;
 mod ui;
 
 use game::*;
-use ratatui::{DefaultTerminal, Frame};
+use ratatui::DefaultTerminal;
 use std::{
     thread::sleep,
     time::{Duration, SystemTime},
 };
-use ui::*;
+
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     ratatui::run(app)?;
@@ -20,22 +20,17 @@ fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
         col: 10,
         row: 10,
     };
-    let mut w = init_world(config);
+    let mut w = World::init_world(config);
 
     let duration = Duration::from_secs_f64(1.0 / w.config.frames as f64);
     loop {
-        terminal.draw(render)?;
-        if crossterm::event::read()?.is_key_press() {
-            break Ok(());
-        }
         let now = SystemTime::now();
-        tick(&mut w);
-        draw_world(&w);
+        terminal.draw(|frame| w.render(frame))?;
+        /*if crossterm::event::read()?.is_key_press() {
+            break Ok(());
+        }*/
+        w.tick();
         let elapsed = SystemTime::now().duration_since(now).unwrap_or_default();
         sleep(duration.saturating_sub(elapsed));
     }
-}
-
-fn render(frame: &mut Frame) {
-    frame.render_widget("Welcome to Conway's Game of Lift", frame.area());
 }
