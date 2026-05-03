@@ -11,33 +11,28 @@ use ui::*;
 fn main() -> color_eyre::Result<()> {
     color_eyre::install()?;
     ratatui::run(app)?;
+    Ok(())
+}
+
+fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
     let config = Config {
         frames: 60,
         col: 10,
         row: 10,
     };
-    let w = init_world(config);
-    main_loop(w);
-    Ok(())
-}
+    let mut w = init_world(config);
 
-pub fn main_loop(mut w: World) {
     let duration = Duration::from_secs_f64(1.0 / w.config.frames as f64);
-    loop {
-        let now = SystemTime::now();
-        tick(&mut w);
-        draw_world(&w);
-        let elapsed = SystemTime::now().duration_since(now).unwrap_or_default();
-        sleep(duration.saturating_sub(elapsed));
-    }
-}
-
-fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
     loop {
         terminal.draw(render)?;
         if crossterm::event::read()?.is_key_press() {
             break Ok(());
         }
+        let now = SystemTime::now();
+        tick(&mut w);
+        draw_world(&w);
+        let elapsed = SystemTime::now().duration_since(now).unwrap_or_default();
+        sleep(duration.saturating_sub(elapsed));
     }
 }
 
