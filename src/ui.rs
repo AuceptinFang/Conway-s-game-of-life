@@ -62,9 +62,9 @@ impl World {
                         let is_cursor = editing && x == cursor_x && y == cursor_y;
                         let (symbol, style) = match (*alive, is_cursor) {
                             (true, true) => {
-                                ("<>", Style::default().fg(Color::Black).bg(Color::Green))
+                                ("[]", Style::default().fg(Color::Black).bg(Color::Green))
                             }
-                            (true, false) => ("##", Style::default().fg(Color::Green)),
+                            (true, false) => ("██", Style::default().fg(Color::Green)),
                             (false, true) => ("[]", Style::default().fg(Color::Yellow)),
                             (false, false) => ("  ", Style::default()),
                         };

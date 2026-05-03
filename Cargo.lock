@@ -197,9 +197,12 @@ dependencies = [
 name = "conways-game-of-life"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "color-eyre",
  "crossterm",
  "ratatui",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

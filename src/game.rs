@@ -1,9 +1,16 @@
+use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent};
-
+use serde::{Deserialize, Serialize};
+use serde_json::{Deserializer, Serializer};
+use std::fs::{self, File};
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MOD {
     RUNNING(usize),
     EDITING(usize),
+}
+
+pub enum AppError {
+    SaveError,
 }
 
 pub struct World {
@@ -13,10 +20,7 @@ pub struct World {
     pub generation: usize,
 }
 
-struct Cell {
-    x: usize,
-    y: usize,
-}
+type Cell = (usize, usize);
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -24,15 +28,13 @@ pub struct Config {
     pub col: usize,
     pub row: usize,
 }
+#[derive(Debug, Serialize, Deserialize)]
+pub struct Saves {
+    seeds: Vec<Vec<Cell>>,
+}
 
 fn get_seeds() -> Vec<Cell> {
-    vec![
-        Cell { x: 1, y: 0 },
-        Cell { x: 2, y: 1 },
-        Cell { x: 0, y: 2 },
-        Cell { x: 1, y: 2 },
-        Cell { x: 2, y: 2 },
-    ]
+    vec![(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)]
 }
 
 impl World {
@@ -90,7 +92,9 @@ impl World {
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => false,
             KeyCode::Char(' ') => {
-                self.toggle_running();
+                if !self.is_running() {
+                    self.toggle_selected_cell();
+                }
                 true
             }
             KeyCode::Left | KeyCode::Char('h') => {
@@ -110,9 +114,7 @@ impl World {
                 true
             }
             KeyCode::Enter => {
-                if !self.is_running() {
-                    self.toggle_selected_cell();
-                }
+                self.toggle_running();
                 true
             }
             KeyCode::Char('n') => {
@@ -121,12 +123,12 @@ impl World {
                 }
                 true
             }
-            KeyCode::Char('c') => {
+            KeyCode::Char('r') => {
                 self.clear();
                 true
             }
-            KeyCode::Char('r') => {
-                self.reset();
+            KeyCode::Char('s') => {
+                self.save();
                 true
             }
             _ => true,
@@ -168,14 +170,14 @@ impl World {
     }
 
     pub fn help_line(&self) -> &'static str {
-        "arrows/hjkl move  enter toggle  space run/pause  n step  c clear  r reset  q quit"
+        "arrows/hjkl move  space toggle  enter run/pause  n step  r reset  q quit"
     }
 
     fn reset(&mut self) {
         self.clear();
         get_seeds().into_iter().for_each(|cell| {
-            if cell.y < self.config.row && cell.x < self.config.col {
-                self.grid[cell.y][cell.x] = true;
+            if cell.1 < self.config.row && cell.0 < self.config.col {
+                self.grid[cell.1][cell.0] = true;
             }
         });
     }
@@ -227,5 +229,23 @@ impl World {
             MOD::RUNNING(_) => MOD::RUNNING(idx),
             MOD::EDITING(_) => MOD::EDITING(idx),
         };
+    }
+
+    fn save(&self) -> Result<(), AppError> {
+        let file_path = "./saves.json";
+        let saves = File::create(file_path);
+        let seeds: Vec<(usize, usize)> = self
+            .grid
+            .iter()
+            .enumerate()
+            .flat_map(|(i, row)| {
+                row.iter()
+                    .enumerate()
+                    .filter(|&(_, &cell)| cell)
+                    .map(move |(j, _)| (i, j))
+            })
+            .collect();
+
+        Ok(())
     }
 }

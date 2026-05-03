@@ -14,9 +14,9 @@ fn main() -> color_eyre::Result<()> {
 
 fn app(terminal: &mut DefaultTerminal) -> std::io::Result<()> {
     let config = Config {
-        frames: 60,
-        col: 10,
-        row: 10,
+        frames: 30,
+        col: 60,
+        row: 25,
     };
     let mut w = World::init_world(config);
     let duration = Duration::from_secs_f64(1.0 / w.config.frames.max(1) as f64);
