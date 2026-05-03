@@ -1,6 +1,6 @@
 use crate::save;
 use crossterm::event::{KeyCode, KeyEvent};
-
+use rand::RngExt;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum Mod {
     RUNNING(usize),
@@ -179,6 +179,22 @@ impl World {
             }
             KeyCode::Char('r') => {
                 self.clear();
+                self.generate_random_seeds()
+                    .unwrap()
+                    .into_iter()
+                    .for_each(|cell| {
+                        if cell.1 < self.config.row && cell.0 < self.config.col {
+                            self.grid[cell.1][cell.0] = true;
+                        }
+                    });
+                self.set_status_message("generate random seeds".to_string());
+                if self.is_running() {
+                    self.toggle_running();
+                }
+                true
+            }
+            KeyCode::Char('c') => {
+                self.clear();
                 self.set_status_message("cleared board".to_string());
                 true
             }
@@ -249,7 +265,7 @@ impl World {
         if self.is_load_dialog_open() {
             "j/k or arrows select  enter load  d delete  esc close"
         } else {
-            "arrows/hjkl move  space toggle  enter run/pause  n step  r clear  s save  L load  q quit"
+            "arrows/hjkl move  space toggle  enter run/pause  n step  c clear  r random s save  L load  q quit"
         }
     }
 
@@ -500,6 +516,22 @@ impl World {
 
     fn set_status_message(&mut self, message: String) {
         self.status_message = message;
+    }
+
+    pub fn generate_random_seeds(&self) -> Result<Vec<save::Cell>, String> {
+        let mut rng = rand::rng();
+        let bound_x = self.config.col;
+        let bound_y = self.config.row;
+        Ok((0..bound_y)
+            .flat_map(|j| (0..bound_x).map(move |i| (i, j)))
+            .filter_map(|(i, j)| {
+                if rng.random_bool(0.2) {
+                    Some((i, j))
+                } else {
+                    None
+                }
+            })
+            .collect())
     }
 }
 

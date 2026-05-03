@@ -1,5 +1,5 @@
 # conways-game-of-life
 
-Haven't finish yet.
+Haven't finished yet.
 
 Maybe it's runnable on Linux.
