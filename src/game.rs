@@ -1,16 +1,57 @@
-use anyhow::Result;
+use crate::save;
 use crossterm::event::{KeyCode, KeyEvent};
-use serde::{Deserialize, Serialize};
-use serde_json::{Deserializer, Serializer};
-use std::fs::{self, File};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MOD {
     RUNNING(usize),
     EDITING(usize),
 }
 
-pub enum AppError {
-    SaveError,
+#[derive(Clone, Debug, Default)]
+pub(crate) struct LoadDialog {
+    pub(crate) saves: Vec<Vec<save::Cell>>,
+    pub(crate) selected: usize,
+}
+
+impl LoadDialog {
+    fn new(saves: Vec<Vec<save::Cell>>) -> Self {
+        Self { saves, selected: 0 }
+    }
+
+    pub(crate) fn len(&self) -> usize {
+        self.saves.len()
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.saves.is_empty()
+    }
+
+    pub(crate) fn selected_number(&self) -> usize {
+        self.selected + 1
+    }
+
+    pub(crate) fn selected_seed(&self) -> Option<&[save::Cell]> {
+        self.saves.get(self.selected).map(Vec::as_slice)
+    }
+
+    fn move_selection(&mut self, delta: isize) {
+        if self.is_empty() {
+            return;
+        }
+
+        let last = self.saves.len().saturating_sub(1) as isize;
+        self.selected = (self.selected as isize + delta).clamp(0, last) as usize;
+    }
+
+    fn select_first(&mut self) {
+        self.selected = 0;
+    }
+
+    fn select_last(&mut self) {
+        if !self.is_empty() {
+            self.selected = self.saves.len() - 1;
+        }
+    }
 }
 
 pub struct World {
@@ -18,9 +59,9 @@ pub struct World {
     pub config: Config,
     pub state: MOD,
     pub generation: usize,
+    pub(crate) load_dialog: Option<LoadDialog>,
+    status_message: String,
 }
-
-type Cell = (usize, usize);
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -28,12 +69,8 @@ pub struct Config {
     pub col: usize,
     pub row: usize,
 }
-#[derive(Debug, Serialize, Deserialize)]
-pub struct Saves {
-    seeds: Vec<Vec<Cell>>,
-}
 
-fn get_seeds() -> Vec<Cell> {
+fn get_seeds() -> Vec<save::Cell> {
     vec![(1, 0), (2, 1), (0, 2), (1, 2), (2, 2)]
 }
 
@@ -44,6 +81,11 @@ impl World {
             config,
             state: MOD::EDITING(0),
             generation: 0,
+            load_dialog: None,
+            status_message: format!(
+                "press s to save current seed, Shift+L to load from {}",
+                save::DEFAULT_SAVE_PATH
+            ),
         };
         world.reset();
         world
@@ -85,10 +127,18 @@ impl World {
     }
 
     pub fn is_running(&self) -> bool {
-        matches!(self.state, MOD::RUNNING(_))
+        self.load_dialog.is_none() && matches!(self.state, MOD::RUNNING(_))
+    }
+
+    pub fn is_load_dialog_open(&self) -> bool {
+        self.load_dialog.is_some()
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if self.is_load_dialog_open() {
+            return self.handle_load_dialog_key(key);
+        }
+
         match key.code {
             KeyCode::Esc | KeyCode::Char('q') => false,
             KeyCode::Char(' ') => {
@@ -125,10 +175,15 @@ impl World {
             }
             KeyCode::Char('r') => {
                 self.clear();
+                self.set_status_message("cleared board".to_string());
                 true
             }
             KeyCode::Char('s') => {
-                self.save();
+                self.save_current_seed();
+                true
+            }
+            KeyCode::Char('L') => {
+                self.open_load_dialog();
                 true
             }
             _ => true,
@@ -136,6 +191,10 @@ impl World {
     }
 
     pub fn mode_label(&self) -> &'static str {
+        if self.is_load_dialog_open() {
+            return "Load";
+        }
+
         match self.state {
             MOD::RUNNING(_) => "Running",
             MOD::EDITING(_) => "Editing",
@@ -158,6 +217,19 @@ impl World {
     }
 
     pub fn status_line(&self) -> String {
+        if let Some(dialog) = self.load_dialog.as_ref() {
+            return match dialog.selected_seed() {
+                Some(seed) => format!(
+                    "mode=Load  file={}  saves={}  selected={}  alive={}",
+                    save::DEFAULT_SAVE_PATH,
+                    dialog.len(),
+                    dialog.selected_number(),
+                    seed.len()
+                ),
+                None => format!("mode=Load  file={}  saves=0", save::DEFAULT_SAVE_PATH),
+            };
+        }
+
         let (x, y) = self.cursor();
         format!(
             "mode={}  generation={}  cursor=({}, {})  alive={}",
@@ -170,7 +242,15 @@ impl World {
     }
 
     pub fn help_line(&self) -> &'static str {
-        "arrows/hjkl move  space toggle  enter run/pause  n step  r reset  q quit"
+        if self.is_load_dialog_open() {
+            "j/k or arrows select  enter load  esc close"
+        } else {
+            "arrows/hjkl move  space toggle  enter run/pause  n step  r clear  s save  L load  q quit"
+        }
+    }
+
+    pub fn message_line(&self) -> &str {
+        &self.status_message
     }
 
     fn reset(&mut self) {
@@ -231,21 +311,189 @@ impl World {
         };
     }
 
-    fn save(&self) -> Result<(), AppError> {
-        let file_path = "./saves.json";
-        let saves = File::create(file_path);
-        let seeds: Vec<(usize, usize)> = self
-            .grid
+    fn current_seed(&self) -> Vec<save::Cell> {
+        self.grid
             .iter()
             .enumerate()
-            .flat_map(|(i, row)| {
+            .flat_map(|(y, row)| {
                 row.iter()
                     .enumerate()
-                    .filter(|&(_, &cell)| cell)
-                    .map(move |(j, _)| (i, j))
+                    .filter_map(move |(x, &alive)| alive.then_some((x, y)))
             })
-            .collect();
+            .collect()
+    }
 
-        Ok(())
+    fn save_current_seed(&mut self) {
+        let seed = self.current_seed();
+        let live_cells = seed.len();
+
+        match save::append_seed(save::DEFAULT_SAVE_PATH, seed) {
+            Ok(slot) => self.set_status_message(format!(
+                "saved {live_cells} live cells to {} as seed #{slot}",
+                save::DEFAULT_SAVE_PATH
+            )),
+            Err(err) => self.set_status_message(format!(
+                "failed to save current seed to {}: {err}",
+                save::DEFAULT_SAVE_PATH
+            )),
+        }
+    }
+
+    fn open_load_dialog(&mut self) {
+        match save::load(save::DEFAULT_SAVE_PATH) {
+            Ok(saves) => {
+                let save_count = saves.seeds.len();
+                self.load_dialog = Some(LoadDialog::new(saves.seeds));
+                self.set_status_message(match save_count {
+                    0 => format!("no saved seeds found in {}", save::DEFAULT_SAVE_PATH),
+                    1 => format!(
+                        "opened load window for 1 saved seed in {}",
+                        save::DEFAULT_SAVE_PATH
+                    ),
+                    count => format!(
+                        "opened load window for {count} saved seeds in {}",
+                        save::DEFAULT_SAVE_PATH
+                    ),
+                });
+            }
+            Err(err) => self
+                .set_status_message(format!("failed to open {}: {err}", save::DEFAULT_SAVE_PATH)),
+        }
+    }
+
+    fn handle_load_dialog_key(&mut self, key: KeyEvent) -> bool {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('q') => {
+                self.close_load_dialog("closed load window".to_string());
+                true
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(dialog) = self.load_dialog.as_mut() {
+                    dialog.move_selection(-1);
+                }
+                true
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(dialog) = self.load_dialog.as_mut() {
+                    dialog.move_selection(1);
+                }
+                true
+            }
+            KeyCode::Enter => {
+                self.load_selected_seed();
+                true
+            }
+            _ => true,
+        }
+    }
+
+    fn close_load_dialog(&mut self, message: String) {
+        self.load_dialog = None;
+        self.set_status_message(message);
+    }
+
+    fn load_selected_seed(&mut self) {
+        let (selected, seed) = match self.load_dialog.as_ref() {
+            Some(dialog) => match dialog.selected_seed() {
+                Some(seed) => (dialog.selected_number(), seed.to_vec()),
+                None => {
+                    self.set_status_message(format!(
+                        "no saved seeds available in {}",
+                        save::DEFAULT_SAVE_PATH
+                    ));
+                    return;
+                }
+            },
+            None => return,
+        };
+
+        let loaded_cells = self.apply_seed(&seed);
+        let skipped_cells = seed.len().saturating_sub(loaded_cells);
+        self.load_dialog = None;
+
+        if skipped_cells == 0 {
+            self.set_status_message(format!(
+                "loaded seed #{selected} from {} ({loaded_cells} live cells)",
+                save::DEFAULT_SAVE_PATH
+            ));
+        } else {
+            self.set_status_message(format!(
+                "loaded seed #{selected} from {} ({loaded_cells} cells, skipped {skipped_cells} out of bounds)",
+                save::DEFAULT_SAVE_PATH
+            ));
+        }
+    }
+
+    fn apply_seed(&mut self, seed: &[save::Cell]) -> usize {
+        self.clear();
+        self.state = MOD::EDITING(0);
+
+        let mut loaded_cells = 0;
+        let mut first_cell = None;
+
+        for &(x, y) in seed {
+            if y < self.config.row && x < self.config.col {
+                self.grid[y][x] = true;
+                loaded_cells += 1;
+                first_cell.get_or_insert((x, y));
+            }
+        }
+
+        if let Some((x, y)) = first_cell {
+            self.set_cursor_index(y * self.config.col + x);
+        } else {
+            self.set_cursor_index(0);
+        }
+
+        loaded_cells
+    }
+
+    fn set_status_message(&mut self, message: String) {
+        self.status_message = message;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn apply_seed_resets_world_and_skips_out_of_bounds_cells() {
+        let config = Config {
+            frames: 30,
+            col: 4,
+            row: 3,
+        };
+        let mut world = World::init_world(config);
+        world.generation = 9;
+        world.state = MOD::RUNNING(3);
+
+        let loaded = world.apply_seed(&[(1, 1), (3, 2), (9, 9)]);
+
+        assert_eq!(loaded, 2);
+        assert_eq!(world.generation, 0);
+        assert_eq!(world.state, MOD::EDITING(5));
+        assert!(world.grid[1][1]);
+        assert!(world.grid[2][3]);
+        assert!(!world.grid[0][0]);
+    }
+
+    #[test]
+    fn load_dialog_navigation_clamps_to_available_seeds() {
+        let mut dialog = LoadDialog::new(vec![vec![(0, 0)], vec![(1, 1)], vec![(2, 2)]]);
+
+        dialog.move_selection(10);
+        assert_eq!(dialog.selected, 2);
+        assert_eq!(dialog.selected_number(), 3);
+
+        dialog.move_selection(-10);
+        assert_eq!(dialog.selected, 0);
+        assert_eq!(dialog.selected_number(), 1);
+
+        dialog.select_last();
+        assert_eq!(dialog.selected, 2);
+
+        dialog.select_first();
+        assert_eq!(dialog.selected, 0);
     }
 }

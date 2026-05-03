@@ -1,4 +1,5 @@
 mod game;
+mod save;
 mod ui;
 
 use crossterm::event::{self, Event, KeyEventKind};
