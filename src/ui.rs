@@ -112,8 +112,9 @@ impl World {
         let preview = Paragraph::new(Text::from(self.preview_lines(dialog, body[1].width)))
             .block(Block::default().borders(Borders::ALL).title("Preview"))
             .wrap(Wrap { trim: false });
-        let help = Paragraph::new("j/k or arrows move  Enter load  Esc close  g/G first/last")
-            .style(Style::default().fg(Color::DarkGray));
+        let help =
+            Paragraph::new("j/k or arrows move  Enter load  d delete  Esc close  g/G first/last")
+                .style(Style::default().fg(Color::DarkGray));
 
         frame.render_widget(saves, body[0]);
         frame.render_widget(preview, body[1]);

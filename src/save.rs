@@ -61,6 +61,18 @@ pub fn append_seed<P: AsRef<Path>>(path: P, seed: Vec<Cell>) -> Result<usize, Sa
     Ok(slot)
 }
 
+pub fn delete_seed<P: AsRef<Path>>(path: P, index: usize) -> Result<Option<Vec<Cell>>, SaveError> {
+    let path = path.as_ref();
+    let mut saves = load(path)?;
+    if index >= saves.seeds.len() {
+        return Ok(None);
+    }
+
+    let removed = saves.seeds.remove(index);
+    write(path, &saves)?;
+    Ok(Some(removed))
+}
+
 fn write(path: &Path, saves: &Saves) -> Result<(), SaveError> {
     if let Some(parent) = path
         .parent()
@@ -121,6 +133,39 @@ mod tests {
                 seeds: vec![vec![(1, 2), (3, 4)], vec![(5, 6)]],
             }
         );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn delete_seed_removes_selected_seed_and_keeps_order() {
+        let path = unique_path("delete");
+        append_seed(&path, vec![(1, 2)]).expect("first save should work");
+        append_seed(&path, vec![(3, 4)]).expect("second save should work");
+        append_seed(&path, vec![(5, 6)]).expect("third save should work");
+
+        let removed = delete_seed(&path, 1)
+            .expect("delete should succeed")
+            .expect("second seed should exist");
+
+        assert_eq!(removed, vec![(3, 4)]);
+        assert_eq!(
+            load(&path).expect("save file should be readable"),
+            Saves {
+                seeds: vec![vec![(1, 2)], vec![(5, 6)]],
+            }
+        );
+
+        let _ = fs::remove_file(path);
+    }
+
+    #[test]
+    fn delete_seed_returns_none_for_missing_index() {
+        let path = unique_path("delete-missing");
+        append_seed(&path, vec![(1, 2)]).expect("save should work");
+
+        let removed = delete_seed(&path, 99).expect("delete should not fail");
+        assert_eq!(removed, None);
 
         let _ = fs::remove_file(path);
     }

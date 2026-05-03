@@ -52,6 +52,20 @@ impl LoadDialog {
             self.selected = self.saves.len() - 1;
         }
     }
+
+    fn remove_selected(&mut self) -> Option<Vec<save::Cell>> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let removed = self.saves.remove(self.selected);
+        if self.selected >= self.saves.len() && !self.saves.is_empty() {
+            self.selected = self.saves.len() - 1;
+        } else if self.saves.is_empty() {
+            self.selected = 0;
+        }
+        Some(removed)
+    }
 }
 
 pub struct World {
@@ -243,7 +257,7 @@ impl World {
 
     pub fn help_line(&self) -> &'static str {
         if self.is_load_dialog_open() {
-            "j/k or arrows select  enter load  esc close"
+            "j/k or arrows select  g/G top/bottom  enter load  d delete  esc close"
         } else {
             "arrows/hjkl move  space toggle  enter run/pause  n step  r clear  s save  L load  q quit"
         }
@@ -379,8 +393,24 @@ impl World {
                 }
                 true
             }
+            KeyCode::Char('g') => {
+                if let Some(dialog) = self.load_dialog.as_mut() {
+                    dialog.select_first();
+                }
+                true
+            }
+            KeyCode::Char('G') => {
+                if let Some(dialog) = self.load_dialog.as_mut() {
+                    dialog.select_last();
+                }
+                true
+            }
             KeyCode::Enter => {
                 self.load_selected_seed();
+                true
+            }
+            KeyCode::Char('d') => {
+                self.delete_selected_seed();
                 true
             }
             _ => true,
@@ -421,6 +451,48 @@ impl World {
                 "loaded seed #{selected} from {} ({loaded_cells} cells, skipped {skipped_cells} out of bounds)",
                 save::DEFAULT_SAVE_PATH
             ));
+        }
+    }
+
+    fn delete_selected_seed(&mut self) {
+        let Some((selected, save_count)) = self
+            .load_dialog
+            .as_ref()
+            .map(|dialog| (dialog.selected_number(), dialog.len()))
+        else {
+            return;
+        };
+
+        if save_count == 0 {
+            self.set_status_message(format!(
+                "no saved seeds available in {}",
+                save::DEFAULT_SAVE_PATH
+            ));
+            return;
+        }
+
+        match save::delete_seed(save::DEFAULT_SAVE_PATH, selected - 1) {
+            Ok(Some(removed)) => {
+                if let Some(dialog) = self.load_dialog.as_mut() {
+                    let _ = dialog.remove_selected();
+                }
+
+                let remaining = self.load_dialog.as_ref().map_or(0, LoadDialog::len);
+                self.set_status_message(format!(
+                    "deleted seed #{selected} from {} ({} live cells, {} remaining)",
+                    save::DEFAULT_SAVE_PATH,
+                    removed.len(),
+                    remaining
+                ));
+            }
+            Ok(None) => self.set_status_message(format!(
+                "seed #{selected} no longer exists in {}",
+                save::DEFAULT_SAVE_PATH
+            )),
+            Err(err) => self.set_status_message(format!(
+                "failed to delete seed #{selected} from {}: {err}",
+                save::DEFAULT_SAVE_PATH
+            )),
         }
     }
 
@@ -495,5 +567,32 @@ mod tests {
 
         dialog.select_first();
         assert_eq!(dialog.selected, 0);
+    }
+
+    #[test]
+    fn removing_selected_seed_keeps_selection_in_bounds() {
+        let mut dialog = LoadDialog::new(vec![vec![(0, 0)], vec![(1, 1)], vec![(2, 2)]]);
+        dialog.select_last();
+
+        let removed = dialog
+            .remove_selected()
+            .expect("selected save should exist");
+        assert_eq!(removed, vec![(2, 2)]);
+        assert_eq!(dialog.selected, 1);
+        assert_eq!(dialog.len(), 2);
+
+        let removed = dialog
+            .remove_selected()
+            .expect("selected save should exist");
+        assert_eq!(removed, vec![(1, 1)]);
+        assert_eq!(dialog.selected, 0);
+        assert_eq!(dialog.len(), 1);
+
+        let removed = dialog
+            .remove_selected()
+            .expect("selected save should exist");
+        assert_eq!(removed, vec![(0, 0)]);
+        assert_eq!(dialog.selected, 0);
+        assert!(dialog.is_empty());
     }
 }
